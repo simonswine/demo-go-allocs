@@ -71,8 +71,10 @@ services:
         mkdir -p /etc/grafana/provisioning/plugins
         cat <<EOF > /etc/grafana/provisioning/plugins/plugins.yaml
         apiVersion: 1
-        plugins:
+        apps:
         - type: grafana-pyroscope-app
+          jsonData:
+            backendUrl: http://pyroscope:4100
         EOF
         mkdir -p /etc/grafana/provisioning/dashboards
         cat <<EOF > /etc/grafana/provisioning/dashboards/dashboards.yaml
