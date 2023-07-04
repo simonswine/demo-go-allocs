@@ -83,7 +83,7 @@ services:
             options:
               path: /var/lib/grafana/dashboards
         EOF
-        /run.sh
+        exec /run.sh
     environment:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_ANONYMOUS_ENABLED=true
