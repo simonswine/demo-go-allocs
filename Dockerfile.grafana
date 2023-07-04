@@ -1,0 +1,6 @@
+FROM grafana/grafana:10.0.1
+
+COPY grafana-pyroscope-app.zip /tmp
+
+RUN unzip /tmp/grafana-pyroscope-app.zip -d /var/lib/grafana/plugins/grafana-pyroscope
+

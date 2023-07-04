@@ -1,0 +1,208 @@
+version: '3.4'
+
+networks:
+  grafana:
+
+volumes:
+    pyroscope_data: {}
+
+services:
+  prize-v1:
+    networks:
+      - grafana
+    build: ./
+    command: ./prize-v1
+    ports:
+      - "8001:8000"
+
+  prize-v2:
+    networks:
+      - grafana
+    build: ./
+    command: ./prize-v2
+    ports:
+      - "8002:8000"
+
+  prize-v3:
+    networks:
+      - grafana
+    build: ./
+    command: ./prize-v3
+    ports:
+      - "8003:8000"
+
+  prize-v4:
+    networks:
+      - grafana
+    build: ./
+    command: ./prize-v4
+    ports:
+      - "8004:8000"
+
+  grafana:
+    build:
+      context: .
+      dockerfile: Dockerfile.grafana
+      platforms:
+        - "linux/amd64"
+    platform: linux/amd64
+    networks:
+      - grafana
+    ports:
+      - "3000:3000"
+    entrypoint:
+      - sh
+      - -euc
+      - |
+        mkdir -p /etc/grafana/provisioning/datasources
+        cat <<EOF > /etc/grafana/provisioning/datasources/ds.yaml
+        apiVersion: 1
+        datasources:
+        - name: Pyroscope
+          type: phlare
+          access: proxy
+          url: http://pyroscope:4100
+          isDefault: true
+        - name: Prometheus
+          type: prometheus
+          access: proxy
+          url: http://prometheus:9090
+        EOF
+        mkdir -p /etc/grafana/provisioning/plugins
+        cat <<EOF > /etc/grafana/provisioning/plugins/plugins.yaml
+        apiVersion: 1
+        plugins:
+        - type: grafana-pyroscope-app
+        EOF
+        mkdir -p /etc/grafana/provisioning/dashboards
+        cat <<EOF > /etc/grafana/provisioning/dashboards/dashboards.yaml
+        apiVersion: 1
+        providers:
+          - name: 'default'
+            type: 'file'
+            options:
+              path: /var/lib/grafana/dashboards
+        EOF
+        /run.sh
+    environment:
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_BASIC_ENABLED=false
+    volumes:
+      - ./grafana/dashboards:/var/lib/grafana/dashboards/
+
+  pyroscope:
+    image: grafana/phlare:0.6.1
+    entrypoint:
+      - sh
+      - -euc
+      - |
+        cat <<EOF > /tmp/phlare.yaml
+        server:
+          http_listen_port: 4100
+
+        scrape_configs:
+          - job_name: "pyroscope"
+            scrape_interval: "15s"
+            static_configs:
+              - targets: ["127.0.0.1:4100"]
+                labels:
+                  service_name: "pyroscope"
+          - job_name: "prize-v1"
+            scrape_interval: "15s"
+            static_configs:
+              - targets: ["prize-v1:8000"]
+                labels:
+                  service_name: "prize"
+                  version: "v1"
+          - job_name: "prize-v2"
+            scrape_interval: "15s"
+            static_configs:
+              - targets: ["prize-v2:8000"]
+                labels:
+                  service_name: "prize"
+                  version: "v2"
+          - job_name: "prize-v3"
+            scrape_interval: "15s"
+            static_configs:
+              - targets: ["prize-v3:8000"]
+                labels:
+                  service_name: "prize"
+                  version: "v3"
+          - job_name: "prize-v4"
+            scrape_interval: "15s"
+            static_configs:
+              - targets: ["prize-v4:8000"]
+                labels:
+                  service_name: "prize"
+                  version: "v4"
+        EOF
+
+        exec phlare --config.file /tmp/phlare.yaml --phlaredb.max-block-duration 10m --log.level debug
+    networks:
+      - grafana
+    ports:
+      - "4100:4100"
+    volumes:
+      - pyroscope_data:/data
+
+  k6:
+    command: run /tmp/test.js
+    networks:
+      - grafana
+    ports:
+      - "6565:6565"
+    environment:
+      - K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write
+      - K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM=true
+    image: grafana/k6
+    platform: linux/amd64
+    entrypoint:
+      - sh
+      - -euc
+      - |
+        cat <<EOF > /tmp/test.js
+        import http from 'k6/http';
+        import { check, sleep, } from 'k6';
+        export const options = {
+          vus: 10,
+          duration: "24h",
+        };
+        export default function () {
+          const resv1 = http.get('http://prize-v1:8000/', {
+            tags: {version: "v1"},
+          });
+          check(resv1, { 'status is 200': (r) => r.status === 200 }, { version: "v1" });
+
+          const resv2 = http.get('http://prize-v2:8000/', {
+            tags: {version: "v2"},
+          });
+          check(resv2, { 'status is 200': (r) => r.status === 200 }, { version: "v2" });
+
+          const resv3 = http.get('http://prize-v3:8000/', {
+            tags: {version: "v3"},
+          });
+          check(resv3, { 'status is 200': (r) => r.status === 200 }, { version: "v3" });
+
+          const resv4 = http.get('http://prize-v4:8000/', {
+            tags: {version: "v4"},
+          });
+          check(resv4, { 'status is 200': (r) => r.status === 200 }, { version: "v4" });
+
+          sleep(1)
+        }
+        EOF
+
+        exec k6 run -o experimental-prometheus-rw /tmp/test.js
+
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    command:
+      - --enable-feature=native-histograms
+      - --web.enable-remote-write-receiver
+      - --config.file=/etc/prometheus/prometheus.yml
+    networks:
+      - grafana
+    ports:
+      - 9090:9090
+
