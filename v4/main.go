@@ -43,6 +43,17 @@ func (p Prizes) SelectRandom() Prize {
 	return p[n]
 }
 
+// only let prizes with laureates through
+func filterPrizes(in Prizes) (out Prizes) {
+	for _, p := range in {
+		if len(p.Laureates) == 0 {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 var cachedPrizes Prizes
 
 func parsePrizes() (Prizes, error) {
@@ -60,14 +71,7 @@ func parsePrizes() (Prizes, error) {
 			return nil, fmt.Errorf("error parsing json: %w", err)
 		}
 
-		var prizes Prizes
-		for _, p := range data.Prizes {
-			if len(p.Laureates) == 0 {
-				continue
-			}
-			prizes = append(prizes, p)
-		}
-		cachedPrizes = prizes
+		cachedPrizes = filterPrizes(data.Prizes)
 	}
 
 	return cachedPrizes, nil

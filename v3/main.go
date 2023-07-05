@@ -44,6 +44,17 @@ func (p Prizes) SelectRandom() Prize {
 	return p[n]
 }
 
+// only let prizes with laureates through
+func filterPrizes(in Prizes) (out Prizes) {
+	for _, p := range in {
+		if len(p.Laureates) == 0 {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 func parsePrizes() (Prizes, error) {
 	dataJSON, err := os.ReadFile("prize.json")
 	if err != nil {
@@ -58,15 +69,7 @@ func parsePrizes() (Prizes, error) {
 		return nil, fmt.Errorf("error parsing json: %w", err)
 	}
 
-	var prizes Prizes
-	for _, p := range data.Prizes {
-		if len(p.Laureates) == 0 {
-			continue
-		}
-		prizes = append(prizes, p)
-	}
-
-	return prizes, nil
+	return filterPrizes(data.Prizes), nil
 }
 
 func nobelPrize(w http.ResponseWriter, req *http.Request) {
